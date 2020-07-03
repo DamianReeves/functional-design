@@ -30,8 +30,8 @@ package net.degoes
  * servers using Java's InputStream.
  */
 object input_stream {
-  import java.io.InputStream
-
+  import java.io.{ BufferedInputStream, InputStream }
+  import scala.util.Try
   final case class IStream(createInputStream: () => InputStream) { self =>
 
     /**
@@ -42,7 +42,8 @@ object input_stream {
      * exhausted, it will close the first input stream, make the second
      * input stream, and continue reading from the second one.
      */
-    def ++(that: IStream): IStream = ???
+    def ++(that: IStream): IStream =
+      IStream(() => new java.io.SequenceInputStream(self.createInputStream(), that.createInputStream()))
 
     /**
      * EXERCISE 2
@@ -51,7 +52,8 @@ object input_stream {
      * try to create the first input stream, but if that fails by throwing
      * an exception, it will then try to create the second input stream.
      */
-    def orElse(that: IStream): IStream = ???
+    def orElse(that: IStream): IStream =
+      IStream(() => (Try(self.createInputStream()) getOrElse that.createInputStream()))
 
     /**
      * EXERCISE 3
@@ -60,7 +62,13 @@ object input_stream {
      * create the input stream, but wrap it in Java's `BufferedInputStream`
      * before returning it.
      */
-    def buffered: IStream = ???
+    def buffered: IStream =
+      IStream(() => new BufferedInputStream(self.createInputStream()))
+  }
+
+  object IStream {
+    val empty: IStream          = IStream(() => new java.io.ByteArrayInputStream(Array.ofDim(0)))
+    def suspend(is: => IStream) = IStream(() => is.createInputStream())
   }
 
   /**
@@ -70,7 +78,8 @@ object input_stream {
    * or will read from the concatenation of all `secondaries`,
    * and will buffer everything.
    */
-  lazy val solution: IStream = ???
+  lazy val solution: IStream =
+    (primary orElse IStream.suspend(secondaries.reduce[IStream](_ ++ _)) orElse IStream.empty).buffered
 
   lazy val primary: IStream           = ???
   lazy val secondaries: List[IStream] = ???
@@ -94,7 +103,8 @@ object email_filter {
      * Add an "and" operator that will match an email if both the first and
      * the second email filter match the email.
      */
-    def &&(that: EmailFilter): EmailFilter = ???
+    def &&(that: EmailFilter): EmailFilter =
+      EmailFilter(email => self.matches(email) && that.matches(email))
 
     /**
      * EXERCISE 2
@@ -102,7 +112,8 @@ object email_filter {
      * Add an "or" operator that will match an email if either the first or
      * the second email filter match the email.
      */
-    def ||(that: EmailFilter): EmailFilter = ???
+    def ||(that: EmailFilter): EmailFilter =
+      EmailFilter(email => self.matches(email) || that.matches(email))
 
     /**
      * EXERCISE 3
@@ -110,7 +121,7 @@ object email_filter {
      * Add a "negate" operator that will match an email if this email filter
      * does NOT match an email.
      */
-    def negate: EmailFilter = ???
+    def negate: EmailFilter = EmailFilter(email => !self.matches(email))
   }
   object EmailFilter {
     def senderIs(address: Address): EmailFilter = EmailFilter(_.sender == address)
@@ -130,7 +141,10 @@ object email_filter {
    * addressed to "john@doe.com". Build this filter up compositionally
    * by using the defined constructors and operators.
    */
-  lazy val emailFilter1 = ???
+  lazy val emailFilter1 =
+    EmailFilter.subjectContains("discount") &&
+      EmailFilter.bodyContains("N95") &&
+      EmailFilter.recipientIs(Address("john@doe.com")).negate
 }
 
 /**

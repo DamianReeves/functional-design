@@ -30,7 +30,14 @@ object credit_card {
    *  * Expiration date
    *  * Security code
    */
-  type CreditCard
+  final case class CreditCard(number: BigInt, name: Name, expDate: java.time.YearMonth, securityCode: Int)
+
+  sealed abstract case class Name private (name: String)
+  object Name {
+    def fromString(name: String): Option[Name] =
+      if (name.trim().length() == 0) None
+      else Some(new Name(name) {})
+  }
 
   /**
    * EXERCISE 2
@@ -40,7 +47,12 @@ object credit_card {
    * or a digital product, such as a book or movie, or access to an event, such
    * as a music concert or film showing.
    */
-  type Product
+  sealed trait Product
+  object Product {
+    final case class Physical(name: String)                                   extends Product
+    final case class Digital(title: String)                                   extends Product
+    final case class Ticket(name: String, eventDate: java.time.LocalDateTime) extends Product
+  }
 
   /**
    * EXERCISE 3
@@ -49,7 +61,11 @@ object credit_card {
    * of a product price, which could be one-time purchase fee, or a recurring
    * fee on some regular interval.
    */
-  type PricingScheme
+  sealed trait PricingScheme
+  object PricingScheme {
+    final case class OneTimePurchase(fee: BigDecimal)                         extends PricingScheme
+    final case class Recurring(fee: BigDecimal, duration: java.time.Duration) extends PricingScheme
+  }
 }
 
 /**
@@ -66,30 +82,30 @@ object events {
    * Refactor the object-oriented data model in this section to a more
    * functional one, which uses only sealed traits and case classes.
    */
-  abstract class Event(val id: Int) {
-
+  sealed abstract class Event {
+    def id: Int
     def time: Instant
   }
 
   // Events are either UserEvent (produced by a user) or DeviceEvent (produced by a device),
   // please don't extend both it will break code!!!
-  trait UserEvent extends Event {
+  sealed trait UserEvent extends Event {
     def userName: String
   }
 
   // Events are either UserEvent (produced by a user) or DeviceEvent (produced by a device),
   // please don't extend both it will break code!!!
-  trait DeviceEvent extends Event {
+  sealed trait DeviceEvent extends Event {
     def deviceId: Int
   }
 
-  class SensorUpdated(id: Int, val deviceId: Int, val time: Instant, val reading: Option[Double])
-      extends Event(id)
+  case class SensorUpdated(id: Int, val deviceId: Int, val time: Instant, val reading: Option[Double])
+      extends Event
       with DeviceEvent
 
-  class DeviceActivated(id: Int, val deviceId: Int, val time: Instant) extends Event(id) with DeviceEvent
+  case class DeviceActivated(id: Int, val deviceId: Int, val time: Instant) extends Event(id) with DeviceEvent
 
-  class UserPurchase(id: Int, val item: String, val price: Double, val time: Instant, val userName: String)
+  case class UserPurchase(id: Int, val item: String, val price: Double, val time: Instant, val userName: String)
       extends Event(id)
       with UserEvent
 
@@ -114,7 +130,8 @@ object documents {
    * Using only sealed traits and case classes, create a simplified but somewhat
    * realistic model of a Document.
    */
-  type Document
+  final case class Document(id: DocId, lastEditedBy: UserId, content: DocContent, history: List[DocumentEdit])
+  final case class DocumentEdit(editedBy: UserId, content: DocContent)
 
   /**
    * EXERCISE 2
@@ -123,7 +140,19 @@ object documents {
    * type that a given user might have with respect to a document. For example,
    * some users might have read-only permission on a document.
    */
-  type AccessType
+  sealed trait AccessType { self =>
+    def includesRead: Boolean =
+      self match {
+        case AccessType.None      => false
+        case AccessType.Read      => true
+        case AccessType.ReadWrite => true
+      }
+  }
+  object AccessType {
+    case object None      extends AccessType
+    case object Read      extends AccessType
+    case object ReadWrite extends AccessType
+  }
 
   /**
    * EXERCISE 3
@@ -132,7 +161,7 @@ object documents {
    * permissions that a user has on a set of documents they have access to.
    * Do not store the document contents themselves in this model.
    */
-  type DocPermissions
+  final case class DocPermissions(map: Map[DocId, AccessType])
 }
 
 /**
