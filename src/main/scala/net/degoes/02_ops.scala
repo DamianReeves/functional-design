@@ -1,4 +1,5 @@
 package net.degoes
+
 /*
  * INTRODUCTION
  *
@@ -223,9 +224,16 @@ object contact_processing {
   object MappingResult {
     final case class Success[+A](warnings: List[String], value: A) extends MappingResult[A]
     final case class Failure(errors: List[String])                 extends MappingResult[Nothing]
+
+    def fromOption[A](option: Option[A], error: String): MappingResult[A] =
+      option match {
+        case None    => Failure(error :: Nil)
+        case Some(v) => Success(Nil, v)
+      }
   }
 
   final case class SchemaMapping(map: ContactsCSV => MappingResult[ContactsCSV]) { self =>
+    import MappingResult._
 
     /**
      * EXERCISE 1
@@ -236,7 +244,17 @@ object contact_processing {
      * then the result must also fail. Only if both schema mappings succeed
      * can the resulting schema mapping succeed.
      */
-    def +(that: SchemaMapping): SchemaMapping = ???
+    def +(that: SchemaMapping): SchemaMapping =
+      SchemaMapping { csv =>
+        self.map(csv) match {
+          case Success(warnings, value) =>
+            that.map(value) match {
+              case Success(warnings2, value) => Success(warnings ++ warnings2, value)
+              case failure                   => failure
+            }
+          case failure => failure
+        }
+      }
 
     /**
      * EXERCISE 2
@@ -245,7 +263,17 @@ object contact_processing {
      * applying the effects of the first one, unless it fails, and in that
      * case, applying the effects of the second one.
      */
-    def orElse(that: SchemaMapping): SchemaMapping = ???
+    def orElse(that: SchemaMapping): SchemaMapping =
+      SchemaMapping { csv =>
+        self.map(csv) match {
+          case Failure(errors) =>
+            that.map(csv) match {
+              case Failure(errors2) => Failure(errors ++ errors2)
+              case success          => success
+            }
+          case success => success
+        }
+      }
 
     /**
      * BONUS: EXERCISE 3
@@ -271,7 +299,10 @@ object contact_processing {
      */
     def combine(leftColumn: String, rightColumn: String)(newName: String)(
       f: (String, String) => String
-    ): SchemaMapping = ???
+    ): SchemaMapping =
+      SchemaMapping(csv =>
+        MappingResult.fromOption(csv.combine(leftColumn, rightColumn)(newName)(f), "Could not combine")
+      )
 
     /**
      * EXERCISE 5
@@ -279,7 +310,10 @@ object contact_processing {
      * Add a constructor for `SchemaMapping` that moves the column of the
      * specified name to the jth position.
      */
-    def relocate(column: String, j: Int): SchemaMapping = ???
+    def relocate(column: String, j: Int): SchemaMapping =
+      SchemaMapping(csv =>
+        MappingResult.fromOption(csv.relocate(column, j), s"The column {$column} cannot be relocated to index ${j}")
+      )
 
     /**
      * EXERCISE 6
@@ -287,7 +321,7 @@ object contact_processing {
      * Add a constructor for `SchemaMapping` that deletes the column of the
      * specified name.
      */
-    def delete(name: String): SchemaMapping = ???
+    def delete(name: String): SchemaMapping = SchemaMapping(csv => MappingResult.Success(Nil, csv.delete(name)))
   }
 
   /**
@@ -297,7 +331,12 @@ object contact_processing {
    * company's official schema for contacts, by composing schema mappings
    * constructed from constructors and operators.
    */
-  lazy val schemaMapping: SchemaMapping = ???
+  lazy val schemaMapping: SchemaMapping =
+    SchemaMapping.rename("email", "email_address") +
+      SchemaMapping.rename("street", "street_address") +
+      SchemaMapping.rename("postal", "postal_code") +
+      SchemaMapping.combine("fname", "lname")("full_name") { _ + " " + _ } +
+      SchemaMapping.relocate("full_name", 0)
 
   val UserUploadSchema: SchemaCSV =
     SchemaCSV(List("email", "fname", "lname", "country", "street", "postal"))
@@ -397,7 +436,7 @@ object education {
     final case class TrueFalse(question: String, checker: Checker[Boolean]) extends Question[Boolean]
   }
 
-  final case class QuizResult(correctPoints: Int, bonusPoints: Int, wrongPoints: Int, wrong: Vector[String]) {
+  final case class QuizResult(correctPoints: Int, bonusPoints: Int, wrongPoints: Int, wrong: Vector[String]) { self =>
     def totalPoints: Int = correctPoints - wrongPoints
 
     def toBonus: QuizResult = QuizResult(0, bonusPoints + correctPoints, 0, Vector.empty)
@@ -408,7 +447,13 @@ object education {
      * Add a `+` operator that combines this quiz result with the specified
      * quiz result.
      */
-    def +(that: QuizResult): QuizResult = ???
+    def +(that: QuizResult): QuizResult =
+      QuizResult(
+        correctPoints = self.correctPoints + that.correctPoints,
+        bonusPoints = self.bonusPoints + that.bonusPoints,
+        wrongPoints = self.wrongPoints + that.wrongPoints,
+        wrong = self.wrong ++ that.wrong
+      )
   }
   object QuizResult {
 
@@ -418,7 +463,7 @@ object education {
      * Add an `empty` QuizResult that, when combined with any quiz result,
      * returns that same quiz result.
      */
-    def empty: QuizResult = ???
+    def empty: QuizResult = QuizResult(0, 0, 0, Vector.empty)
   }
 
   final case class Quiz(run: () => QuizResult) { self =>
@@ -428,14 +473,17 @@ object education {
      *
      * Add an operator `+` that appends this quiz to the specified quiz.
      */
-    def +(that: Quiz): Quiz = ???
+    def +(that: Quiz): Quiz =
+      Quiz { _ =>
+        self.run() + that.run()
+      }
 
     /**
      * EXERCISE 4
      *
      * Add a unary operator `bonus` that marks this quiz as a bonus quiz.
      */
-    def bonus: Quiz = ???
+    def bonus: Quiz = Quiz(() => self.run().toBonus)
 
     /**
      * EXERCISE 5
@@ -444,7 +492,12 @@ object education {
      * enough, as determined by the specified cutoff, will do the `ifPass`
      * quiz afterward; but otherwise, do the `ifFail` quiz.
      */
-    def conditional(cutoff: Int)(ifPass: Quiz, ifFail: Quiz): Quiz = ???
+    def conditional(f: QuizResult => Boolean)(ifPass: Quiz, ifFail: Quiz): Quiz =
+      Quiz { _ =>
+        val result = self.run()
+        if (f(result)) result + ifPass.run()
+        else result + ifFail.run()
+      }
   }
   object Quiz {
     private def grade[A](f: String => A, checker: Checker[A]): QuizResult =
@@ -481,7 +534,7 @@ object education {
      * Add an `empty` Quiz that does not ask any questions and only returns
      * an empty QuizResult.
      */
-    def empty: Quiz = ???
+    def empty: Quiz = Quiz(_ => QuizResult.empty)
   }
 
   final case class Checker[-A](points: Int, isCorrect: A => Either[String, Unit])
@@ -505,6 +558,13 @@ object education {
    * tough bonus question; and if the user fails the bonus question, fallback
    * to a simpler bonus question with fewer bonus points.
    */
+  lazy val tough = Quiz(Question.Text("What is a Monad?", Checker.isText(100)("Burrito")))
+  lazy val easy  = Quiz(Question.Text("What is a Functor?", Checker.isText(20)("I dont know!!!")))
+
   lazy val exampleQuiz: Quiz =
-    Quiz(Question.TrueFalse("Is coffee the best hot beverage on planet earth?", Checker.isTrue(10)))
+    Quiz(Question.TrueFalse("Is coffee the best hot beverage on planet earth?", Checker.isTrue(10))) +
+      Quiz(Question.TrueFalse("Is the sky blue?", Checker.isTrue(5))) +
+      Quiz(Question.TrueFalse("Is water wet?", Checker.isTrue(10))) +
+      Quiz(Question.TrueFalse("Is the COVID-19 real?", Checker.isTrue(10))).conditional() +
+      tough.conditional(_.correctPoints > 20)(Quiz.empty, easy)
 }

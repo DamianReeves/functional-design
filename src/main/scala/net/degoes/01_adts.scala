@@ -103,13 +103,13 @@ object events {
       extends Event
       with DeviceEvent
 
-  case class DeviceActivated(id: Int, val deviceId: Int, val time: Instant) extends Event(id) with DeviceEvent
+  case class DeviceActivated(id: Int, val deviceId: Int, val time: Instant) extends Event with DeviceEvent
 
   case class UserPurchase(id: Int, val item: String, val price: Double, val time: Instant, val userName: String)
-      extends Event(id)
+      extends Event
       with UserEvent
 
-  class UserAccountCreated(id: Int, val userName: String, val time: Instant) extends Event(id) with UserEvent
+  case class UserAccountCreated(id: Int, val userName: String, val time: Instant) extends Event with UserEvent
 
 }
 
