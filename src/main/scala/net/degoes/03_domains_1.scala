@@ -126,7 +126,7 @@ object spreadsheet {
        *
        * Add a constructor that makes an CalculatedValue from a CellContents.
        */
-      def const(contents: CellContents): CalculatedValue = ???
+      def const(contents: CellContents): CalculatedValue = CalculatedValue(_ => contents)
 
       /**
        * EXERCISE 5
@@ -134,7 +134,9 @@ object spreadsheet {
        * Add a constructor that provides access to the value of the
        * specified cell, identified by col/row.
        */
-      def at(col: Int, row: Int): CalculatedValue = ???
+      def at(col: Int, row: Int): CalculatedValue = CalculatedValue { spreadsheet =>
+        spreadsheet.valueAt(col, row)
+      }
     }
   }
 
@@ -143,7 +145,15 @@ object spreadsheet {
    *
    * Describe a cell whose contents are the sum of other cells.
    */
-  lazy val cell1: Cell = ???
+  lazy val cell1: Cell = Cell(
+    4,
+    2,
+    CalculatedValue { spreadsheet =>
+      spreadsheet.scan(Range.column(5)).foldLeft(CalculatedValue.const(Dbl(0))) {
+        case (acc, cell) => acc.sum(CalculatedValue.const(cell.contents))
+      }
+    }
+  )
 }
 
 /**
