@@ -76,7 +76,7 @@ object spreadsheet {
      * Design a subtype of `CellContents` called `CalculatedValue`, which
      * represents a value that is dynamically computed from a spreadsheet.
      */
-    final case class CalculatedValue() extends CellContents { self =>
+    final case class CalculatedValue(calculate: Spreadsheet => CellContents) extends CellContents { self =>
 
       /**
        * EXERCISE 2
@@ -84,7 +84,13 @@ object spreadsheet {
        * Add some operators to transform one `CalculatedValue` into another `CalculatedValue`. For
        * example, one operator could "negate" a double expression.
        */
-      def negate: CalculatedValue = ???
+      def negate: CalculatedValue = CalculatedValue { spreadsheet =>
+        self.calculate(s) match {
+          case error: Error => error
+          case Dbl(value)   => Dbl(-value)
+          case x            => Error(s"Expected a number but found: $x")
+        }
+      }
 
       /**
        * EXERCISE 3
@@ -92,7 +98,26 @@ object spreadsheet {
        * Add some operators to combine `CalculatedValue`. For example, one operator
        * could sum two double expressions.
        */
-      def sum(that: CalculatedValue): CalculatedValue = ???
+      def sum(that: CalculatedValue): CalculatedValue = CalculatedValue { spreadsheet =>
+        val lhs = self.calculate(spreadsheet)
+        val rhs = that.calculate(spreadsheet)
+        (lhs, rhs) match {
+          case (Dbl(left), Dbl(right)) => Dbl(left + right)
+          case (Dbl(left), Str(right)) => Str(s"$left$right")
+          case (Str(left), Str(right)) => Str(left + right)
+          case (Str(left), Dbl(right)) => Str(left + right)
+          case _                       => Error(s"Cannot sum {$lhs} with {$rhs}")
+        }
+      }
+
+      // private def binary(
+      //   that: CalculatedValue
+      // )(error: String)(pf: PartialFunction[(CellContents, CellContents), CellContents]): CalculatedValue =
+      //   CalculatedValue { spreadsheet =>
+      //     pf.lift((self.calculate(spreadsheet), that.calculate(spreadsheet))).getOrElse {
+      //       Error(error)
+      //     }
+      //   }
     }
     object CalculatedValue {
 
