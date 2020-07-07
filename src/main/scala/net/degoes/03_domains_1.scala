@@ -85,7 +85,7 @@ object spreadsheet {
        * example, one operator could "negate" a double expression.
        */
       def negate: CalculatedValue = CalculatedValue { spreadsheet =>
-        self.calculate(s) match {
+        self.calculate(spreadsheet) match {
           case error: Error => error
           case Dbl(value)   => Dbl(-value)
           case x            => Error(s"Expected a number but found: $x")
@@ -145,14 +145,15 @@ object spreadsheet {
    *
    * Describe a cell whose contents are the sum of other cells.
    */
+  import CellContents._
   lazy val cell1: Cell = Cell(
     4,
     2,
-    CalculatedValue { spreadsheet =>
+    CalculatedValue(spreadsheet =>
       spreadsheet.scan(Range.column(5)).foldLeft(CalculatedValue.const(Dbl(0))) {
-        case (acc, cell) => acc.sum(CalculatedValue.const(cell.contents))
+        case (acc, cell: Cell) => acc.sum(CalculatedValue.const(cell.contents))
       }
-    }
+    )
   )
 }
 
@@ -167,17 +168,25 @@ object etl {
   /**
    * Represents a row of data.
    */
-  final case class DataRow(row: Map[String, DataValue]) {
+  final case class DataRow(row: Map[String, DataValue]) { self =>
     def delete(name: String): DataRow = DataRow(row - name)
+
+    def map(name: String)(f: PartialFunction[DataValue, DataValue]): DataRow =
+      row.get(name).fold(self)(v => f.lift(v).fold(self)(v => DataRow(row.updated(name, v))))
 
     def rename(oldName: String, newName: String): DataRow =
       DataRow(row.get(oldName).fold(row)(value => (row - oldName).updated(newName, value)))
+
+    def coerce(name: String, dtype: DataType): DataRow =
+      row.get(name).fold(self)(v => v.coerce(dtype).fold(self)(v => DataRow(row + (name -> v))))
   }
 
   /**
    * Represents a stream of data.
    */
   final case class DataStream(foreach: (Try[DataRow] => Unit) => Unit) { self =>
+    def coerce(name: String, dtype: DataType): DataStream = self.map(_.coerce(name, dtype))
+
     def delete(name: String): DataStream = map(_.delete(name))
 
     def orElse(that: => DataStream): DataStream =
@@ -190,6 +199,15 @@ object etl {
 
     def map(f: DataRow => DataRow): DataStream =
       DataStream(callback => self.foreach(a => callback(a.map(f))))
+
+    def mapColumn(name: String)(f: PartialFunction[DataValue, DataValue]): DataStream =
+      self.map(_.map(name)(f))
+
+    def merge(that: => DataStream): DataStream =
+      DataStream { callback =>
+        self.foreach(callback)
+        that.foreach(callback)
+      }
 
     def rename(oldName: String, newName: String): DataStream =
       self.map(_.rename(oldName, newName))
@@ -205,7 +223,16 @@ object etl {
    * Also mock out, but do not implement, a method on each repository type called
    * `load`, which returns a `DataStream`.
    */
-  type DataRepo
+  sealed trait DataRepo {
+    def load: DataStream              = ???
+    def save(input: DataStream): Unit = ???
+  }
+  object DataRepo {
+    final case class Ftp(server: String, port: Int)  extends DataRepo
+    final case class Url(uri: String)                extends DataRepo
+    final case class S3(uri: String)                 extends DataRepo
+    final case class Database(connectionUri: String) extends DataRepo
+  }
 
   /**
    * EXERCISE 2
@@ -213,7 +240,13 @@ object etl {
    * Design a data type that models the type of primitives the ETL pipeline
    * has access to. This will include string, numeric, and date/time data.
    */
-  type DataType
+  sealed trait DataType
+  object DataType {
+    case object NA       extends DataType
+    case object Str      extends DataType
+    case object Num      extends DataType
+    case object DateTime extends DataType
+  }
 
   /**
    * EXERCISE 3
@@ -230,6 +263,38 @@ object etl {
     def coerce(otherType: DataType): Option[DataValue]
   }
 
+  object DataValue {
+    case object NA extends DataValue { self =>
+      def dataType: DataType                             = DataType.NA
+      def coerce(otherType: DataType): Option[DataValue] = None
+
+    }
+    case class Str(value: String) extends DataValue { self =>
+      def dataType = DataType.Str
+      def coerce(otherType: DataType): Option[DataValue] = otherType match {
+        case DataType.NA       => None
+        case DataType.Str      => Some(self)
+        case DataType.Num      => Try { BigDecimal(value) }.map(Num(_)).toOption
+        case DataType.DateTime => Try { java.time.Instant.parse(value) }.map(DateTime(_)).toOption
+      }
+    }
+
+    case class Num(value: BigDecimal) extends DataValue {
+      def dataType = DataType.Num
+      def coerce(otherType: DataType): Option[DataValue] = otherType match {
+        case DataType.NA       => None
+        case DataType.Str      => ???
+        case DataType.Num      => ???
+        case DataType.DateTime => ???
+      }
+    }
+
+    case class DateTime(value: java.time.Instant) extends DataValue {
+      def dataType                                       = DataType.DateTime
+      def coerce(otherType: DataType): Option[DataValue] = ???
+    }
+  }
+
   /**
    * `Pipeline` is a data type that models a transformation from an input data
    * set into an output data step, as a series of one or more individual
@@ -243,7 +308,10 @@ object etl {
      * Add a `merge` operator that models the merge of the output of this
      * pipeline with the output of the specified pipeline.
      */
-    def merge(that: Pipeline): Pipeline = ???
+    def merge(that: => Pipeline): Pipeline =
+      Pipeline { () =>
+        self.run() merge that.run()
+      }
 
     /**
      * EXERCISE 5
@@ -251,35 +319,42 @@ object etl {
      * Add an `orElse` operator that models applying this pipeline, but if it
      * fails, switching over and trying another pipeline.
      */
-    def orElse(that: Pipeline): Pipeline = ???
+    def orElse(that: => Pipeline): Pipeline = Pipeline { () =>
+      self.run() orElse that.run()
+    }
 
     /**
      * EXERCISE 6
      *
      * Add an operator to rename a column in a pipeline.
      */
-    def rename(oldName: String, newName: String): Pipeline = ???
+    def rename(oldName: String, newName: String): Pipeline = Pipeline(() => self.run().rename(oldName, newName))
 
     /**
      * EXERCISE 7
      *
      * Add an operator to coerce a column into a specific type in a pipeline.
      */
-    def coerce(column: String, newType: DataType): Pipeline = ???
+    def coerce(column: String, newType: DataType): Pipeline = Pipeline(() => self.run().coerce(column, newType))
 
     /**
      * EXERCISE 8
      *
      * Add an operator to delete a column in a pipeline.
      */
-    def delete(column: String): Pipeline = ???
+    def delete(column: String): Pipeline = Pipeline(() => self.run().delete(column))
 
     /**
      * EXERCISE 9
      *
      * To replace nulls in the specified column with a specified value.
      */
-    def replaceNulls(column: String, defaultValue: DataValue): Pipeline = ???
+    def replaceNulls(column: String, defaultValue: DataValue): Pipeline =
+      Pipeline(() =>
+        self.run().mapColumn(column) {
+          case DataValue.NA => defaultValue
+        }
+      )
   }
   object Pipeline {
 
@@ -300,7 +375,12 @@ object etl {
    * into a column "first_name", and which coerces the "age" column into an
    * integer type.
    */
-  lazy val pipeline: Pipeline = ???
+  lazy val pipeline: Pipeline =
+    Pipeline
+      .extract(DataRepo.Ftp("localhost", 81))
+      .replaceNulls("age", DataValue.Num(0))
+      .rename("fname", "first_name")
+      .coerce("age", DataType.Num)
 }
 
 /**

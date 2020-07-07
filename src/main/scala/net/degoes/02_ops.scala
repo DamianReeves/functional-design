@@ -474,7 +474,7 @@ object education {
      * Add an operator `+` that appends this quiz to the specified quiz.
      */
     def +(that: Quiz): Quiz =
-      Quiz { _ =>
+      Quiz { () =>
         self.run() + that.run()
       }
 
@@ -493,7 +493,7 @@ object education {
      * quiz afterward; but otherwise, do the `ifFail` quiz.
      */
     def conditional(f: QuizResult => Boolean)(ifPass: Quiz, ifFail: Quiz): Quiz =
-      Quiz { _ =>
+      Quiz { () =>
         val result = self.run()
         if (f(result)) result + ifPass.run()
         else result + ifFail.run()
@@ -534,7 +534,7 @@ object education {
      * Add an `empty` Quiz that does not ask any questions and only returns
      * an empty QuizResult.
      */
-    def empty: Quiz = Quiz(_ => QuizResult.empty)
+    def empty: Quiz = Quiz(() => QuizResult.empty)
   }
 
   final case class Checker[-A](points: Int, isCorrect: A => Either[String, Unit])
@@ -565,6 +565,6 @@ object education {
     Quiz(Question.TrueFalse("Is coffee the best hot beverage on planet earth?", Checker.isTrue(10))) +
       Quiz(Question.TrueFalse("Is the sky blue?", Checker.isTrue(5))) +
       Quiz(Question.TrueFalse("Is water wet?", Checker.isTrue(10))) +
-      Quiz(Question.TrueFalse("Is the COVID-19 real?", Checker.isTrue(10))).conditional() +
+      Quiz(Question.TrueFalse("Is the COVID-19 real?", Checker.isTrue(10))) +
       tough.conditional(_.correctPoints > 20)(Quiz.empty, easy)
 }
