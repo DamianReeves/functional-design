@@ -24,19 +24,19 @@ package net.degoes
  * executable code or into another lower-level domain, which provides the
  * capabilities modeled by the functional domain.
  *
- * Executable encodings are "open": anyone can add new constructors and 
- * operators, without updating existing code. On the other hand, executable 
+ * Executable encodings are "open": anyone can add new constructors and
+ * operators, without updating existing code. On the other hand, executable
  * encodings are not "introspectable": because they are not data, but rather,
- * opaque executable machinery, they cannot be serialized, optimized, or 
+ * opaque executable machinery, they cannot be serialized, optimized, or
  * converted to other encodings.
- * 
- * Abstract encodings are "introspectable": because they are pure data, they 
+ *
+ * Abstract encodings are "introspectable": because they are pure data, they
  * can be serialized, optimized, and converted to other encodings, assuming
  * their component parts have the same properties (not all abstract encodings
- * do; if you embed a function inside an abstract encoding, it's becomes 
+ * do; if you embed a function inside an abstract encoding, it's becomes
  * opaque). On the other hand, abstract encodings are "closed": no one can add
  * new constructors or operators, without updating existing code.
- * 
+ *
  * Legacy code prefers executable encodings; while many benefits of Functional
  * Design can be seen best using abstract encodings.
  *
@@ -59,7 +59,7 @@ object education_executable {
      * Add an operator `+` that appends this quiz to the specified quiz. Model
      * this as pure data using a constructor for Quiz in the companion object.
      */
-    def +(that: Quiz2): Quiz2 = ???
+    def +(that: Quiz2): Quiz2 = Quiz2.Append(self, that)
 
     /**
      * EXERCISE 2
@@ -67,10 +67,14 @@ object education_executable {
      * Add a unary operator `bonus` that marks this quiz as a bonus quiz. Model
      * this as pure data using a constructor for Quiz in the companion object.
      */
-    def bonus: Quiz2 = ???
+    def bonus: Quiz2 = Quiz2.Bonus(self)
   }
   object Quiz2 {
-    def apply[A](question: Question[A]): Quiz2 = ???
+    final case class Append(left: Quiz2, right: Quiz2)   extends Quiz2
+    final case class Bonus(value: Quiz2)                 extends Quiz2
+    final case class FromQuestion(question: Question[_]) extends Quiz2
+
+    def apply[A](question: Question[A]): Quiz2 = FromQuestion(question)
   }
 
   /**
@@ -80,7 +84,14 @@ object education_executable {
    * the interactive console operations that it describes, returning a
    * QuizResult value.
    */
-  def run(quiz: Quiz2): QuizResult = ???
+  def run(quiz: Quiz2): QuizResult = {
+    def translate(quiz: Quiz2): Quiz = quiz match {
+      case Quiz2.Append(left: Quiz2, right: Quiz2) => translate(left) + translate(right)
+      case Quiz2.Bonus(value: Quiz2)               => translate(value).bonus
+      case Quiz2.FromQuestion(question)            => Quiz(question)
+    }
+    translate(quiz).run()
+  }
 }
 
 /**
@@ -112,6 +123,11 @@ object contact_processing2 {
   }
   object SchemaMapping2 {
 
+    final case class AndThen(left: SchemaMapping2, right: SchemaMapping2) extends SchemaMapping2
+    final case class OrElse(left: SchemaMapping2, right: SchemaMapping2)  extends SchemaMapping2
+    final case class Rename(oldName: String, newName: String)             extends SchemaMapping2
+    final case class Delete(name: String)                                 extends SchemaMapping2
+
     /**
      * EXERCISE 3
      *
@@ -134,7 +150,22 @@ object contact_processing2 {
    * Implement an interpreter for the `SchemaMapping` model that translates it into
    * into changes on the contact list.
    */
-  def run(mapping: SchemaMapping2, contacts: ContactsCSV): MappingResult[ContactsCSV] = ???
+  def run(mapping: SchemaMapping2, contacts: ContactsCSV): MappingResult[ContactsCSV] =
+    mapping match {
+      case SchemaMapping2.AndThen(left, right) =>
+        run(left, contacts) match {
+          case MappingResult.Success(warnings, value) => run(right, value)
+          case failure                                => failure
+        }
+      case SchemaMapping2.OrElse(left, right) =>
+        run(left, contacts) match {
+          case MappingResult.Failure(errors) => run(right, contacts)
+          case success                       => success
+        }
+      case SchemaMapping2.Rename(oldName, newName) =>
+        MappingResult.Success(List.empty, contacts.rename(oldName, newName))
+      case SchemaMapping2.Delete(name) => MappingResult.Success(List.empty, contacts.delete(name))
+    }
 
   /**
    * EXERCISE 6
@@ -183,6 +214,14 @@ object email_filter2 {
     def negate: EmailFilter = ???
   }
   object EmailFilter {
+
+    final case class And(left: EmailFilter, right: EmailFilter) extends EmailFilter
+    final case class Or(left: EmailFilter, right: EmailFilter)  extends EmailFilter
+    final case class Negate(value: EmailFilter)                 extends EmailFilter
+    final case class SubjectContains(value: String)             extends EmailFilter
+    final case class BodyContains(value: String)                extends EmailFilter
+    final case class SenderIn(senders: Set[Address])            extends EmailFilter
+    final case class RecipientIn(recipients: Set[Address])      extends EmailFilter
 
     /**
      * EXERCISE 4
