@@ -1,7 +1,5 @@
 package net.degoes
 
-import net.degoes.expr.CalculatedValue
-
 /*
  * INTRODUCTION
  *
@@ -181,6 +179,7 @@ object expr {
 
 object InterpreterSideBar {
   import zio.UIO
+  import expr.CalculatedValue
 
   type Interpreter[F[_], A, G[_], B] = F[A] => G[A]
 
@@ -208,7 +207,7 @@ object parser {
      * NOTE: Be sure to modify the `parse` method below, so that it can
      * handle the new operation.
      */
-    final case class Repeat()
+    final case class Repeat[A](min: Option[Int], max: Option[Int], parser: () => Parser[A]) extends Parser[List[A]]
 
     /**
      * EXERCISE 2
@@ -219,7 +218,7 @@ object parser {
      * NOTE: Be sure to modify the `parse` method below, so that it can
      * handle the new operation.
      */
-    final case class Succeed()
+    final case class Succeed[A](value: A) extends Parser[A]
 
     /**
      * EXERCISE 3
@@ -229,7 +228,7 @@ object parser {
      * NOTE: Be sure to modify the `parse` method below, so that it can
      * handle the new operation.
      */
-    final case class Fail()
+    final case class Fail(value: String) extends Parser[Nothing]
 
     /**
      * EXERCISE 4
@@ -240,7 +239,7 @@ object parser {
      * NOTE: Be sure to modify the `parse` method below, so that it can
      * handle the new operation.
      */
-    final case class OrElse()
+    final case class OrElse[A, B](left: () => Parser[A], right: () => Parser[B]) extends Parser[Either[A, B]]
 
     /**
      * EXERCISE 5
@@ -251,7 +250,7 @@ object parser {
      * NOTE: Be sure to modify the `parse` method below, so that it can
      * handle the new operation.
      */
-    final case class Sequence[A, B]()
+    final case class Sequence[A, B](left: () => Parser[A], right: () => Parser[B]) extends Parser[(A, B)]
   }
 
   import Parser._
@@ -262,5 +261,33 @@ object parser {
         input.headOption
           .map((a: Char) => Right(input.drop(1) -> a))
           .getOrElse(Left("The input to the parser has no remaining characters"))
+      case Repeat(min0, max0, parser) =>
+        val min = min0.getOrElse(0)
+        val max = max0.getOrElse(Int.MaxValue)
+        parse(parser(), input) match {
+          case Left(error) => if (min > 0) Left(error) else Right((input, Nil))
+          case Right((input, value)) =>
+            parse(Repeat(Some(min - 1), Some(max), parser), input) match {
+              case Left(error)          => if (min > 1) Left(error) else Right((input, value :: Nil))
+              case Right((input, tail)) => Right((input, value :: tail))
+            }
+        }
+
+      case Succeed(value) => Right(input -> value)
+      case Fail(message)  => Left(message)
+      case OrElse(left, right) =>
+        parse(left(), input).map { case (input, a) => (input, Left(a)) } match {
+          case Left(error) =>
+            parse(right(), input).map { case (input, b) => (input, Right(b)) }
+          case either => either
+        }
+
+      case Sequence(left, right) =>
+        parse(left(), input).flatMap {
+          case (input, a) =>
+            parse(right(), input).map {
+              case (input, b) => ((input, (a, b)))
+            }
+        }
     }
 }
