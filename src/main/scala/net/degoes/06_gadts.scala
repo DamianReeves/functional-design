@@ -1,5 +1,7 @@
 package net.degoes
 
+import net.degoes.expr.CalculatedValue
+
 /*
  * INTRODUCTION
  *
@@ -81,8 +83,13 @@ object Motivation2 {
  * calculate values in a user-defined way.
  */
 object expr {
-  sealed trait CalculatedValue[+A]
+  sealed trait CalculatedValue[+A] { self =>
+
+  }
   object CalculatedValue {
+    implicit class CalculatedIntValue(val self: CalculatedValue[Int]) extends AnyVal {
+      def add(that: CalculatedValue[Int]): CalculatedValue[Int] = Add(self, that)
+    }
     final case class Integer(value: Int) extends CalculatedValue[Int]
     final case class Str(value: String)  extends CalculatedValue[String]
 
@@ -95,7 +102,7 @@ object expr {
      * NOTE: Be sure to modify the `calculate` method below, so that it can
      * handle the new operation.
      */
-    final case class Add()
+    final case class Add(left: CalculatedValue[Int], right: CalculatedValue[Int]) extends CalculatedValue[Int]
 
     /**
      * EXERCISE 2
@@ -106,7 +113,7 @@ object expr {
      * NOTE: Be sure to modify the `calculate` method below, so that it can
      * handle the new operation.
      */
-    final case class Subtract()
+    final case class Subtract(left: CalculatedValue[Int], right: CalculatedValue[Int]) extends CalculatedValue[Int]
 
     /**
      * EXERCISE 3
@@ -117,7 +124,7 @@ object expr {
      * NOTE: Be sure to modify the `calculate` method below, so that it can
      * handle the new operation.
      */
-    final case class Multiply()
+    final case class Multiply(left: CalculatedValue[Int], right: CalculatedValue[Int]) extends CalculatedValue[Int]
 
     /**
      * EXERCISE 4
@@ -128,7 +135,8 @@ object expr {
      * NOTE: Be sure to modify the `calculate` method below, so that it can
      * handle the new operation.
      */
-    final case class Concat()
+    final case class Concat(left: CalculatedValue[String], right: CalculatedValue[String])
+        extends CalculatedValue[String]
 
     /**
      * EXERCISE 5
@@ -139,16 +147,48 @@ object expr {
      * NOTE: Be sure to modify the `calculate` method below, so that it can
      * handle the new operation.
      */
-    final case class StartsWith()
+    final case class StartsWith(prefix: CalculatedValue[String], value: CalculatedValue[String])
+        extends CalculatedValue[Boolean]
   }
 
   import CalculatedValue._
 
   def calculate[A](expr: CalculatedValue[A]): A =
     expr match {
-      case Integer(v) => v
-      case Str(v)     => v
+      case Integer(v)                => v
+      case Str(v)                    => v
+      case Add(left, right)          => calculate(left) + calculate(right)
+      case Subtract(left, right)     => calculate(left) - calculate(right)
+      case Multiply(left, right)     => calculate(left) * calculate(right)
+      case Concat(left, right)       => calculate(left) + calculate(right)
+      case StartsWith(prefix, value) => calculate(value).startsWith(calculate(prefix))
     }
+
+  import zio.UIO
+  def calculateM[A](expr: CalculatedValue[A]): UIO[A] =
+    UIO.effectSuspendTotal {
+      expr match {
+        case Integer(value)          => UIO(value)
+        case Str(value)              => UIO(value)
+        case Add(left, right)        => (calculateM(left) zipWith calculateM(right))(_ + _)
+        case Subtract(left, right)   => (calculateM(left) zipWith calculateM(right))(_ - _)
+        case Multiply(left, right)   => (calculateM(left) zipWith calculateM(right))(_ * _)
+        case Concat(left, right)     => (calculateM(left) zipWith calculateM(right))(_ + _)
+        case StartsWith(left, right) => (calculateM(left) zipWith calculateM(right))(_ startsWith _)
+      }
+    }
+}
+
+object InterpreterSideBar {
+  import zio.UIO
+
+  type Interpreter[F[_], A, G[_], B] = F[A] => G[A]
+
+  trait Evaluator[F[_], G[_]] {
+    def apply[A](fa: F[A]): G[A]
+  }
+
+  type PrettyPrinter[A] = Interpreter[CalculatedValue, A, UIO, String]
 }
 
 /**
