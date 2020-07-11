@@ -10,6 +10,70 @@ package net.degoes
  *
  */
 
+object Motivation {
+  sealed trait Expr[A] { self =>
+    def +(that: Expr[A])(implicit aIsInt: A <:< Int): Expr[Int] =
+      Expr.Add(self.as[Int], that.as[Int])
+
+    def as[B](implicit ev: A <:< B): Expr[B] = Expr.As(self, ev)
+  }
+  object Expr {
+    final case class ConstantInt(value: Int)                extends Expr[Int]
+    final case class ConstantStr(value: String)             extends Expr[String]
+    final case class As[A, B](expr: Expr[A], ev: A <:< B)   extends Expr[B]
+    final case class Add(left: Expr[Int], right: Expr[Int]) extends Expr[Int]
+
+    def int(v: Int): Expr[Int] = ConstantInt(v)
+
+    def str(v: String): Expr[String] = ConstantStr(v)
+  }
+
+  def eval[A](expr: Expr[A]): A =
+    expr match {
+      case Expr.Add(left, right) => eval(left) + eval(right)
+
+      case Expr.ConstantInt(v) => v
+
+      case Expr.ConstantStr(v) => v
+
+      case Expr.As(expr, ev) => ev(eval(expr))
+    }
+
+  // eval(Expr.str("foo") + Expr.str("bar"))
+}
+
+object Motivation2 {
+  val any2stringadd = null
+  sealed trait Expr[A] { self =>
+  }
+  object Expr {
+
+    // This is another strategy for adding the operators as extension methods
+    implicit class ExprInt(val self: Expr[Int]) extends AnyVal {
+      def +(that: Expr[Int]): Expr[Int] = Expr.Add(self, that)
+    }
+
+    final case class ConstantInt(value: Int)                extends Expr[Int]
+    final case class ConstantStr(value: String)             extends Expr[String]
+    final case class Add(left: Expr[Int], right: Expr[Int]) extends Expr[Int]
+
+    def int(v: Int): Expr[Int] = ConstantInt(v)
+
+    def str(v: String): Expr[String] = ConstantStr(v)
+  }
+
+  def eval[A](expr: Expr[A]): A =
+    expr match {
+      case Expr.Add(left, right) => eval(left) + eval(right)
+
+      case Expr.ConstantInt(v) => v
+
+      case Expr.ConstantStr(v) => v
+    }
+
+  eval(Expr.int(22) + Expr.int(20))
+}
+
 /**
  * EXPRESSIONS - EXERCISE SET 1
  *

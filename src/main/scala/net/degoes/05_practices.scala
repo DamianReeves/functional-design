@@ -1,6 +1,5 @@
 package net.degoes
 
-package net.degoes
 /*
  * INTRODUCTION
  *
@@ -54,38 +53,33 @@ object email_filter3 {
   sealed trait EmailFilter { self =>
     def &&(that: EmailFilter): EmailFilter = EmailFilter.And(self, that)
 
-    def ||(that: EmailFilter): EmailFilter = EmailFilter.InclusiveOr(self, that)
+    def ||(that: EmailFilter): EmailFilter = !(!self && !that)
 
-    def ^^(that: EmailFilter): EmailFilter = EmailFilter.ExclusiveOr(self, that)
+    def ^^(that: EmailFilter): EmailFilter = (self || that) && !(self && that)
+
+    def negate: EmailFilter = EmailFilter.Not(self)
+
+    def unary_! : EmailFilter = negate
   }
   object EmailFilter {
-    final case object Always                                            extends EmailFilter
-    final case object Never                                             extends EmailFilter
-    final case class And(left: EmailFilter, right: EmailFilter)         extends EmailFilter
-    final case class InclusiveOr(left: EmailFilter, right: EmailFilter) extends EmailFilter
-    final case class ExclusiveOr(left: EmailFilter, right: EmailFilter) extends EmailFilter
-    final case class SenderEquals(target: Address)                      extends EmailFilter
-    final case class SenderNotEquals(target: Address)                   extends EmailFilter
-    final case class RecipientEquals(target: Address)                   extends EmailFilter
-    final case class RecipientNotEquals(target: Address)                extends EmailFilter
-    final case class SenderIn(targets: Set[Address])                    extends EmailFilter
-    final case class RecipientIn(targets: Set[Address])                 extends EmailFilter
-    final case class BodyContains(phrase: String)                       extends EmailFilter
-    final case class BodyNotContains(phrase: String)                    extends EmailFilter
-    final case class SubjectContains(phrase: String)                    extends EmailFilter
-    final case class SubjectNotContains(phrase: String)                 extends EmailFilter
+    final case class Not(value: EmailFilter)                    extends EmailFilter
+    final case class And(left: EmailFilter, right: EmailFilter) extends EmailFilter
+    final case class SenderIn(targets: Set[Address])            extends EmailFilter
+    final case class RecipientIn(targets: Set[Address])         extends EmailFilter
+    final case class BodyContains(phrase: String)               extends EmailFilter
+    final case class SubjectContains(phrase: String)            extends EmailFilter
 
-    val always: EmailFilter = Always
+    val always: EmailFilter = !senderIn(Set())
 
-    val never: EmailFilter = Always
+    val never: EmailFilter = !always
 
-    def senderIs(sender: Address): EmailFilter = SenderEquals(sender)
+    def senderIs(sender: Address): EmailFilter = SenderIn(Set(sender))
 
-    def senderIsNot(sender: Address): EmailFilter = SenderNotEquals(sender)
+    def senderIsNot(sender: Address): EmailFilter = !senderIs(sender)
 
-    def recipientIs(recipient: Address): EmailFilter = RecipientEquals(recipient)
+    def recipientIs(recipient: Address): EmailFilter = recipientIn(Set(recipient))
 
-    def recipientIsNot(recipient: Address): EmailFilter = RecipientNotEquals(recipient)
+    def recipientIsNot(recipient: Address): EmailFilter = !recipientIs(recipient)
 
     def senderIn(senders: Set[Address]): EmailFilter = SenderIn(senders)
 
@@ -93,11 +87,11 @@ object email_filter3 {
 
     def bodyContains(phrase: String): EmailFilter = BodyContains(phrase)
 
-    def bodyDoesNotContain(phrase: String): EmailFilter = BodyNotContains(phrase)
+    def bodyDoesNotContain(phrase: String): EmailFilter = !BodyContains(phrase)
 
     def subjectContains(phrase: String): EmailFilter = SubjectContains(phrase)
 
-    def subjectDoesNotContain(phrase: String): EmailFilter = SubjectNotContains(phrase)
+    def subjectDoesNotContain(phrase: String): EmailFilter = !SubjectContains(phrase)
   }
 }
 
@@ -112,15 +106,26 @@ object ui_components {
    * The following API is not composable—there is no domain. Introduce a
    * domain with elements, constructors, and composable operators.
    */
-  trait Turtle { self =>
-    def turnLeft(degrees: Int): Unit
+  sealed trait Turtle { self =>
+    import Turtle._
+    def turnLeft(degrees: Int): Turtle = AndThen(self, Turn(degrees))
 
-    def turnRight(degrees: Int): Unit
+    def turnRight(degrees: Int): Turtle = AndThen(self, Turn(-degrees))
 
-    def goForward(): Unit
+    def goForward(): Turtle = Go(true)
 
-    def goBackward(): Unit
+    def goBackward(): Turtle = Go(false)
 
-    def draw(): Unit
+    def draw(): Unit = ???
+  }
+
+  object Turtle {
+
+    def place(x: Int, y: Int): Turtle = Place(x, y)
+
+    final case class Place(x: Int, y: Int)                  extends Turtle
+    final case class Turn(degrees: Int)                     extends Turtle
+    final case class Go(forward: Boolean)                   extends Turtle
+    final case class AndThen(first: Turtle, second: Turtle) extends Turtle
   }
 }
