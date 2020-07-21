@@ -21,4 +21,4 @@ project/plugins/project/
 .vscode
 
 .DS_Store
-
+out/

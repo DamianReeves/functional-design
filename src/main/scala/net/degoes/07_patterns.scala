@@ -531,14 +531,15 @@ object recipes {
     final case class Cinnamon(amount: Double) extends Ingredient
   }
 
-  sealed trait Recipe[+A] {
+  sealed trait Recipe[+A] { self =>
 
     /**
      * EXERCISE 1
      *
      * Implement a `map` operation that allows changing what a recipe produces.
      */
-    def map[B](f: A => B): Recipe[B] = ???
+    def map[B](f: A => B): Recipe[B] =
+      Recipe.Map(self, f)
 
     /**
      * EXERCISE 2
@@ -546,7 +547,7 @@ object recipes {
      * Implement a `combine` operation that allows combining two recipes into
      * one, producing both items in a tuple.
      */
-    def combine[B](that: Recipe[B]): Recipe[(A, B)] = ???
+    def combine[B](that: Recipe[B]): Recipe[(A, B)] = Recipe.Combine(self, that)
 
     /**
      * EXERCISE 3
@@ -554,7 +555,7 @@ object recipes {
      * Implement a `tryOrElse` operation that allows trying a backup recipe,
      * in case this recipe ends in disaster.
      */
-    def tryOrElse[B](that: Recipe[B]): Recipe[Either[A, B]] = ???
+    def tryOrElse[B](that: Recipe[B]): Recipe[Either[A, B]] = Recipe.TryOrElse(self, that)
 
     /**
      * EXERCISE 4
@@ -565,12 +566,21 @@ object recipes {
      * NOTE: Be sure to update the `make` method below so that you can make
      * recipes that use your new operation.
      */
-    def flatMap[B](f: A => Recipe[B]): Recipe[B] = ???
+    def flatMap[B](f: A => Recipe[B]): Recipe[B] = Recipe.FlatMap(self, f)
+
+    def bake(temp: Int, time: Int): Recipe[Baked[A]] = Recipe.Bake(self, temp, time)
   }
   object Recipe {
-    case object Disaster                                              extends Recipe[Nothing]
-    final case class AddIngredient(ingredient: Ingredient)            extends Recipe[Ingredient]
-    final case class Bake[A](recipe: Recipe[A], temp: Int, time: Int) extends Recipe[Baked[A]]
+    case object Disaster                                                 extends Recipe[Nothing]
+    final case class AddIngredient(ingredient: Ingredient)               extends Recipe[Ingredient]
+    final case class Bake[A](recipe: Recipe[A], temp: Int, time: Int)    extends Recipe[Baked[A]]
+    final case class Map[A, B](recipe: Recipe[A], f: A => B)             extends Recipe[B]
+    final case class Combine[A, B](left: Recipe[A], right: Recipe[B])    extends Recipe[(A, B)]
+    final case class TryOrElse[A, B](left: Recipe[A], right: Recipe[B])  extends Recipe[Either[A, B]]
+    final case class FlatMap[A, B](recipe: Recipe[A], f: A => Recipe[B]) extends Recipe[B]
+
+    def addIngredient(ingredient: Ingredient): Recipe[Ingredient] = AddIngredient(ingredient)
+    def disaster: Recipe[Nothing]                                 = Disaster
   }
   import Recipe._
 
@@ -586,5 +596,28 @@ object recipes {
         if (time * temp < 1000) Baked.Undercooked(a)
         else if (time * temp > 6000) Baked.Burnt(a)
         else Baked.CookedPerfect(a)
+      case Map(recipe, f) => f(make(recipe))
+      case Combine(left, right) =>
+        val a = make(left)
+        val b = make(right)
+        println(s"Combining $a and $b")
+        (a, b)
+      case TryOrElse(left, right) =>
+        try Left(make(left))
+        catch {
+          case _: Exception => Right(make(right))
+        }
+      case FlatMap(recipe, f) =>
+        make(f(make(recipe)))
     }
+
+  final case class Cake(ingredients: List[Ingredient])
+
+  lazy val recipe: Recipe[Baked[Cake]] =
+    (for {
+      i1 <- Recipe.addIngredient(Ingredient.Eggs(4))
+      i2 <- Recipe.addIngredient(Ingredient.Flour(4))
+      i3 <- Recipe.addIngredient(Ingredient.Cinnamon(1))
+      i4 <- Recipe.addIngredient(Ingredient.Sugar(2))
+    } yield Cake(List(i1, i2, i3, i4))).bake(300, 30)
 }
